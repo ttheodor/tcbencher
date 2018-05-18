@@ -199,18 +199,6 @@ void group_convolution_4_4_32_56_3_3_32_56(float32 *pO, const float32 *pI,
 int main(int argc, char *argv[]) {
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-    int nDevices;
-
-    cudaGetDeviceCount(&nDevices);
-    for (int i = 0; i < nDevices; i++) {
-        cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, i);
-        std::cout << "Device Number: " << i << "\nDevice name: " << prop.name
-                  << std::endl
-                  << "Compute capability: " << prop.major << prop.minor
-                  << std::endl;
-    }
-
     auto kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
 
