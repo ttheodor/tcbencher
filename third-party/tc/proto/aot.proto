@@ -1,0 +1,29 @@
+syntax = "proto2";
+import "mapping_options.proto";
+import "compcache.proto";
+
+package tc;
+
+message KernelInfo {
+  required string tc = 1;
+  repeated TensorInfoProto inputs = 2;
+  repeated TensorInfoProto outputs = 3;
+  required CudaMappingOptionsProto kernel_options = 4;
+  required string cuda_source = 5;
+  required string specialized_name = 6;
+  repeated int64 parameters = 7;
+  required CudaDimProto tight_block = 8;
+  required CudaDimProto tight_grid = 9;
+  required string git_version = 10;
+  //in milliseconds 
+  required uint64 compilation_time = 11;
+
+  required uint64 id = 12;
+
+  //in microseconds 
+  repeated uint64 runtimes = 13;
+}
+
+message AotBuf{
+  repeated KernelInfo kernels = 1;
+}
