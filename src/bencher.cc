@@ -195,25 +195,47 @@ void group_convolution_4_4_32_56_3_3_32_56(float32 *pO, const float32 *pI,
         }
     }
 }
+#define Check(condition)                                                       \
+    do {                                                                       \
+        cudaError_t result = condition;                                        \
+        if (result != cudaSuccess) {                                           \
+            std::stringstream ss;                                              \
+            ss << "Error at: " << __FILE__ << ":" << __LINE__ << ": "          \
+               << cudaGetErrorString(result);                                  \
+            throw std::runtime_error(ss.str().c_str());                        \
+        }                                                                      \
+    } while (0)
+
+auto getDeviceName() {
+
+    int deviceID = 0;
+    Check(cudaGetDevice(&deviceID));
+    cudaDeviceProp deviceProp;
+    Check(cudaGetDeviceProperties(&deviceProp, deviceID));
+    return std::string{deviceProp.name};
+}
 
 int main(int argc, char *argv[]) {
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     auto kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
+    auto deviceName = getDeviceName();
 
     TensorManager tm;
-
     std::vector<const float *> inputs;
     std::vector<float *> outputs;
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
+        const auto &info = kernels.at(id);
+        if (info->runtimes_size() > 0) {
+            continue;
+        }
 
         inputs.clear();
         outputs.clear();
 
-        const auto &info = kernels.at(id);
         for (const auto &i : info->inputs()) {
             inputs.push_back(tm.getPointerToTensor(tc::TensorInfo{i}));
         }
@@ -229,6 +251,7 @@ int main(int argc, char *argv[]) {
                           .count();
             d += us;
             info->add_runtimes(us);
+            info->set_device(deviceName);
         }
         std::cout << "Benchmarked kernel " << id << " : " << d / 5.0f << "us"
                   << std::endl;
