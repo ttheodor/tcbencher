@@ -1,4 +1,5 @@
 #include <chrono>
+#include <csignal>
 #include <cuda_runtime.h>
 #include <experimental/filesystem>
 #include <fstream>
@@ -207,7 +208,6 @@ void group_convolution_4_4_32_56_3_3_32_56(float32 *pO, const float32 *pI,
     } while (0)
 
 auto getDeviceName() {
-
     int deviceID = 0;
     Check(cudaGetDevice(&deviceID));
     cudaDeviceProp deviceProp;
@@ -218,13 +218,23 @@ auto getDeviceName() {
 int main(int argc, char *argv[]) {
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-    auto kernelBuf = readProto();
+    static tc::AotBuf kernelBuf;
+    kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
     auto deviceName = getDeviceName();
+
+    auto handler = [](int) {
+        writeProto(kernelBuf);
+        std::abort();
+    };
+    std::signal(SIGINT, handler);
+    std::signal(SIGTERM, handler);
+    std::signal(SIGKILL, handler);
 
     TensorManager tm;
     std::vector<const float *> inputs;
     std::vector<float *> outputs;
+    auto c = 0;
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
@@ -253,8 +263,8 @@ int main(int argc, char *argv[]) {
             info->add_runtimes(us);
             info->set_device(deviceName);
         }
-        std::cout << "Benchmarked kernel " << id << " : " << d / 5.0f << "us"
-                  << std::endl;
+        std::cout << "Benchmarked " << ++c << "th kernel with id " << id
+                  << " : " << d / 5.0f << "us" << std::endl;
     }
     writeProto(kernelBuf);
 }
