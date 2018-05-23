@@ -1,8 +1,4 @@
 #!/bin/bash
-
-
-
-
 retriever=${1}
 protofile=${2}
 benchmaker_header_dir=${3}
@@ -42,7 +38,7 @@ function pp {
         outputs="${outputs}, outputs[${o}]"
     done
 
-    printf "#include \"benchmark_register.hpp\"
+    echo -e "#include \"benchmark_register.hpp\"
 #include <cuda_runtime.h>
 #include <stdexcept>
 #include <sstream>
@@ -90,10 +86,10 @@ export -f pp
 function compile {
     cuda=$(pp ${1})
     fname=$(mktemp /tmp/cuda_sourceXXXXXX.cu)
-    printf "${cuda}\n" > ${fname}
+    echo -e "${cuda}\n" > ${fname}
     #nvcc ${fname} -I${benchmaker_header_dir} -I${cuda_header_dir} -c -O3 --use_fast_math -std=c++14 -o cuda_${1}.o 
 }
 
 export -f compile
 
-seq 0 ${s_1} | parallel -a - compile {}
+seq 0 ${s_1} | parallel --eta -a - compile {}
