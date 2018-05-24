@@ -9,6 +9,7 @@ flags = [
     '-isystem', '/opt/cuda/include',
     '-isystem', '/home/theo/tcbencher/third-party/pcg/include',
     '-isystem', '/home/theo/tcbencher/third-party/tc/',
+    '-isystem', '/home/theo/tcbencher/third-party/clara/',
     '-isystem', '/home/theo/tcbencher/build/third-party/tc/proto',
     '-I', '/home/theo/tcbencher/src',
 ]
