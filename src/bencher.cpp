@@ -65,13 +65,15 @@ struct CudaDeleter {
     void operator()(float *t) { cudaFree(t); }
 };
 
+struct CudaOutOfMemory : std::exception {};
+
 auto makeTensor(const tc::TensorInfo &ti) {
     float *t;
     auto size =
         std::accumulate(ti.shape.begin(), ti.shape.end(), 1l,
                         [](const auto &a, const auto &b) { return a * b; });
     if (cudaMalloc(&t, size * sizeof(float)) != cudaSuccess) {
-        throw std::runtime_error{"Could not allocate cuda memory."};
+        throw CudaOutOfMemory{};
     }
 
     return std::unique_ptr<float, CudaDeleter>{t, CudaDeleter{}};
@@ -145,6 +147,11 @@ class TensorManager {
         for (auto &p : uses) {
             p.second = 0;
         }
+    }
+
+    void clear() {
+        uses.clear();
+        tensors.clear();
     }
 
   private:
@@ -235,6 +242,13 @@ int main(int argc, char *argv[]) {
     std::vector<const float *> inputs;
     std::vector<float *> outputs;
     auto c = 0;
+    auto number_kernels =
+        std::count_if(Register::get().begin(), Register::get().end(),
+                      [&kernels](const auto &x) {
+                          return kernels.at(x.first)->runtimes_size() == 0;
+                      });
+    auto benchmarked = 0ul;
+    uint64_t total_us = 0;
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
@@ -243,16 +257,28 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        inputs.clear();
-        outputs.clear();
+        while (true) {
+            try {
+                tm.resetUses();
 
-        for (const auto &i : info->inputs()) {
-            inputs.push_back(tm.getPointerToTensor(tc::TensorInfo{i}));
+                inputs.clear();
+                outputs.clear();
+
+                for (const auto &i : info->inputs()) {
+                    inputs.push_back(tm.getPointerToTensor(tc::TensorInfo{i}));
+                }
+                for (const auto &o : info->outputs()) {
+                    outputs.push_back(tm.getPointerToTensor(tc::TensorInfo{o}));
+                }
+                tm.resetUses();
+                break;
+            } catch (const CudaOutOfMemory &e) {
+                std::cout
+                    << "Out of cuda memory, will free all memory and retry"
+                    << std::endl;
+                tm.clear();
+            }
         }
-        for (const auto &o : info->outputs()) {
-            outputs.push_back(tm.getPointerToTensor(tc::TensorInfo{o}));
-        }
-        tm.resetUses();
 
         uint64_t d = 0;
         for (int i = 0; i < 5; ++i) {
@@ -263,8 +289,16 @@ int main(int argc, char *argv[]) {
             info->add_runtimes(us);
             info->set_device(deviceName);
         }
+        ++benchmarked;
+        total_us += d;
+        auto us_per_kernel = d / benchmarked;
+        auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
+        auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
+
         std::cout << "Benchmarked " << ++c << "th kernel with id " << id
-                  << " : " << d / 5.0f << "us" << std::endl;
+                  << " : " << d / 5.0f
+                  << "us; Estimated Minutes Remaining: " << remaining_minutes
+                  << std::endl;
     }
     writeProto(kernelBuf);
 }
