@@ -14,7 +14,8 @@
 
 namespace {
 DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
-}
+DEFINE_uint64(threshold, 50000, "benchmark threshold in us (default: 50000)");
+} // namespace
 
 namespace fs = std::experimental::filesystem;
 
@@ -281,13 +282,21 @@ int main(int argc, char *argv[]) {
         }
 
         uint64_t d = 0;
-        for (int i = 0; i < 5; ++i) {
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                          kernel_function(inputs, outputs))
-                          .count();
-            d += us;
-            info->add_runtimes(us);
-            info->set_device(deviceName);
+        auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                      kernel_function(inputs, outputs))
+                      .count();
+        d += us;
+        info->add_runtimes(us);
+        info->set_device(deviceName);
+
+        if (us < FLAGS_threshold) {
+            for (int i = 1; i < 5; ++i) {
+                auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              kernel_function(inputs, outputs))
+                              .count();
+                d += us;
+                info->add_runtimes(us);
+            }
         }
         ++benchmarked;
         total_us += d;
