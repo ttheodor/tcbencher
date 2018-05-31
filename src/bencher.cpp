@@ -242,7 +242,6 @@ int main(int argc, char *argv[]) {
     TensorManager tm;
     std::vector<const float *> inputs;
     std::vector<float *> outputs;
-    auto c = 0;
     auto number_kernels =
         std::count_if(Register::get().begin(), Register::get().end(),
                       [&kernels](const auto &x) {
@@ -250,6 +249,7 @@ int main(int argc, char *argv[]) {
                       });
     auto benchmarked = 0ul;
     uint64_t total_us = 0;
+    uint64_t c = 0;
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
@@ -308,6 +308,9 @@ int main(int argc, char *argv[]) {
                   << " : " << d / 5.0f
                   << "us; Estimated Minutes Remaining: " << remaining_minutes
                   << std::endl;
+        if (++c % 100 == 0) {
+            writeProto(kernelBuf);
+        }
     }
     writeProto(kernelBuf);
 }
