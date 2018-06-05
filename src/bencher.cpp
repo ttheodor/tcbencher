@@ -15,6 +15,7 @@
 namespace {
 DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
 DEFINE_uint64(threshold, 50000, "benchmark threshold in us (default: 50000)");
+DEFINE_uint64(timelimit, 11, "time limit in hours (default:11)");
 } // namespace
 
 namespace fs = std::experimental::filesystem;
@@ -225,6 +226,7 @@ auto getDeviceName() {
 
 int main(int argc, char *argv[]) {
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
+    auto program_start_time = std::chrono::high_resolution_clock::now();
 
     static tc::AotBuf kernelBuf;
     kernelBuf = readProto();
@@ -310,6 +312,13 @@ int main(int argc, char *argv[]) {
                   << std::endl;
         if (++c % 100 == 0) {
             writeProto(kernelBuf);
+        }
+
+        auto now = std::chrono::high_resolution_clock::now();
+        if (std::chrono::duration_cast<std::chrono::hours>(now -
+                                                           program_start_time)
+                .count() >= FLAGS_timelimit) {
+            break;
         }
     }
     writeProto(kernelBuf);
