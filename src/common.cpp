@@ -4,14 +4,13 @@
 
 #include <boost/functional/hash.hpp>
 
-void writeProto(const std::filesystem::path &filename,
-                const tc::AotBuf &proto) {
+void writeProto(const fs::path &filename, const tc::AotBuf &proto) {
     std::ofstream output{filename.string(), std::ios::binary | std::ios::trunc};
     if (not proto.SerializeToOstream(&output))
         throw std::runtime_error{"Failed to serialize protobuf."};
 }
 
-tc::AotBuf readProto(const std::filesystem::path &filename) {
+tc::AotBuf readProto(const fs::path &filename) {
     tc::AotBuf kernels;
     {
         std::ifstream input{filename.string(), std::ios::binary};
@@ -22,8 +21,7 @@ tc::AotBuf readProto(const std::filesystem::path &filename) {
     return kernels;
 }
 
-std::vector<tc::AotBuf>
-readProtos(const std::vector<std::filesystem::path> &filenames) {
+std::vector<tc::AotBuf> readProtos(const std::vector<fs::path> &filenames) {
     std::vector<tc::AotBuf> protos;
     protos.reserve(filenames.size());
     std::transform(filenames.begin(), filenames.end(),

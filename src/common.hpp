@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <tuple>
 #include <vector>
 
@@ -6,7 +5,14 @@
 
 #include <tensor.h>
 
+#if __cpp_lib_filesystem >= 201603
+#include <filesystem>
 namespace fs = std::filesystem;
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
+
 
 tc::AotBuf readProto(const fs::path &filename);
 

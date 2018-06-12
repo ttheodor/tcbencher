@@ -1,7 +1,6 @@
 #include <chrono>
 #include <csignal>
 #include <cuda_runtime.h>
-#include <experimental/filesystem>
 #include <fstream>
 #include <memory>
 #include <numeric>
@@ -12,13 +11,22 @@
 #include <benchmark_register.hpp>
 #include <tensor.h>
 
+#if __cpp_lib_filesystem >= 201603
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
+
+
+
 namespace {
 DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
 DEFINE_uint64(threshold, 50000, "benchmark threshold in us (default: 50000)");
 DEFINE_uint64(timelimit, 11, "time limit in hours (default:11)");
 } // namespace
 
-namespace fs = std::experimental::filesystem;
 
 auto readProto() {
     if (not fs::exists(FLAGS_input))

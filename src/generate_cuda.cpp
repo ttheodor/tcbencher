@@ -1,15 +1,20 @@
 #include <aot.pb.h>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
 
+#if __cpp_lib_filesystem >= 201603
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
+
 #include <clara.hpp>
 
 using namespace clara;
-// namespace fs = std::experimental::filesystem;
-namespace fs = std::filesystem;
 
 bool showHelp;
 std::string input;
