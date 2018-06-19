@@ -44,13 +44,12 @@ message MappingOptionsProto {
   optional TilingProto tiling = 4;
   // Unroll innermost loops to until at most "unroll" copies.  If not provided,
   // do not unroll.
-  optional uint64 unroll = 7;
-  // Apply tiling to imperfectly nested loops if possible.  Same tilesizes are
-  // used.
-  required bool tile_imperfectly_nested = 8;
-  // reserved 5, 6, 9 to 13; can only activate with proto3
-  // Reserved: 5, 6, 9-13 -> factored out into CudaMappingOptionsProto
-  required bool match_library_calls = 14;
+  optional uint64 unroll = 5;
+  // Apply tiling to imperfectly nested loops if possible.
+  // Same tile sizes are used.
+  required bool tile_imperfectly_nested = 6;
+  // Match library calls when possible (CUB reductions for now)
+  required bool match_library_calls = 7;
 }
 
 message CudaMappingOptionsProto {
@@ -69,6 +68,8 @@ message CudaMappingOptionsProto {
   // Maximum size of shred memory to use, in bytes.  If not provided, all
   // shared memory available on the current active device will be used.
   optional uint64 max_shared_memory = 7;
+  // Use the readonly cache (i.e. emit __ldg loads)
+  required bool use_readonly_cache = 8;
 }
 
 message CpuMappingOptionsProto {
