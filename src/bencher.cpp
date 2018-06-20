@@ -19,14 +19,11 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 
-
-
 namespace {
 DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
 DEFINE_uint64(threshold, 50000, "benchmark threshold in us (default: 50000)");
 DEFINE_uint64(timelimit, 11, "time limit in hours (default:11)");
 } // namespace
-
 
 auto readProto() {
     if (not fs::exists(FLAGS_input))
@@ -259,7 +256,6 @@ int main(int argc, char *argv[]) {
                       });
     auto benchmarked = 0ul;
     uint64_t total_us = 0;
-    uint64_t c = 0;
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
@@ -314,11 +310,11 @@ int main(int argc, char *argv[]) {
         auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
         auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
 
-        std::cout << "Benchmarked " << ++c << "th kernel with id " << id
+        std::cout << "Benchmarked " << benchmarked << "th kernel with id " << id
                   << " : " << d / 5.0f
                   << "us; Estimated Minutes Remaining: " << remaining_minutes
                   << std::endl;
-        if (++c % 100 == 0) {
+        if (benchmarked % 1000 == 0) {
             writeProto(kernelBuf);
         }
 
