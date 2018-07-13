@@ -39,7 +39,9 @@ class KernelInfoAggregator {
 
     tc::AotBuf get_merged() const {
         tc::AotBuf buf;
-        for (const auto &[key, kernel] : kernels) {
+        for (const auto p : kernels) {
+            auto &key = p.first;
+            auto &kernel = p.second;
             *buf.add_kernels() = kernel;
         }
         return buf;
