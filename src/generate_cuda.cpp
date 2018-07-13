@@ -2,7 +2,6 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <string_view>
 
 #if __cpp_lib_filesystem >= 201603
 #include <filesystem>
@@ -51,7 +50,7 @@ to_string(const google::protobuf::RepeatedField<google::protobuf::int64> &v) {
     return ss.str();
 }
 
-auto make_params(uint64_t n, std::string_view s) {
+auto make_params(uint64_t n, const std::string &s) {
     std::stringstream ss;
     for (uint64_t i = 0; i < n - 1; ++i) {
         ss << s << '[' << i << ']' << ',';
