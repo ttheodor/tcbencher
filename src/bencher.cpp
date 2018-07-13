@@ -21,8 +21,8 @@ namespace fs = std::experimental::filesystem;
 
 namespace {
 DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
-DEFINE_uint64(threshold, 50000, "benchmark threshold in us (default: 50000)");
-DEFINE_uint64(timelimit, 11, "time limit in hours (default:11)");
+DEFINE_uint64(threshold, 100000, "benchmark threshold in us (default: 50000)");
+DEFINE_uint64(gpu, 0, "which gpu to use (default:0)");
 } // namespace
 
 auto readProto() {
@@ -231,11 +231,13 @@ auto getDeviceName() {
 
 int main(int argc, char *argv[]) {
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
-    auto program_start_time = std::chrono::high_resolution_clock::now();
-
     static tc::AotBuf kernelBuf;
     kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
+    if (cudaSetDevice(FLAGS_gpu) != cudaSuccess) {
+        std::cout << "Could not set gpu device to " << FLAGS_gpu << std::endl;
+        return 1;
+    }
     auto deviceName = getDeviceName();
 
     auto handler = [](int) {
@@ -316,13 +318,6 @@ int main(int argc, char *argv[]) {
                   << std::endl;
         if (benchmarked % 1000 == 0) {
             writeProto(kernelBuf);
-        }
-
-        auto now = std::chrono::high_resolution_clock::now();
-        if (std::chrono::duration_cast<std::chrono::hours>(now -
-                                                           program_start_time)
-                .count() >= FLAGS_timelimit) {
-            break;
         }
     }
     writeProto(kernelBuf);
