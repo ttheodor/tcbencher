@@ -308,7 +308,7 @@ int main(int argc, char *argv[]) {
         }
         ++benchmarked;
         total_us += d;
-        auto us_per_kernel = d / benchmarked;
+        auto us_per_kernel = total_us / benchmarked;
         auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
         auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
 
