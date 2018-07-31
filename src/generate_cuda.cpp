@@ -104,6 +104,7 @@ auto makeCode(const tc::KernelInfo &ki) {
         R"code(
     Check(cudaEventRecord(stop, 0));
     Check(cudaEventSynchronize(stop));
+    Check(cudaGetLastError());
     float ms = 0.0f;
     Check(cudaEventElapsedTime(&ms, start, stop));
     Check(cudaEventDestroy(start));
