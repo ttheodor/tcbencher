@@ -62,6 +62,8 @@ auto make_params(uint64_t n, const std::string &s) {
 auto make_input_params(int n) { return make_params(n, "inputs"); }
 auto make_output_params(int n) { return make_params(n, "outputs"); }
 
+uint64_t get_cuda_dim(uint64_t d) { return d == 0 ? 1ul : d; }
+
 static auto preample = R"code(
 #include "benchmark_register.hpp"
 #include <cuda_runtime.h>
@@ -90,9 +92,12 @@ auto makeCode(const tc::KernelInfo &ki) {
   Register::get().registerBenchmark([]
   (const std::vector<const float*>& inputs, std::vector<float*>& outputs){
     dim3 grid{)code"
-       << ki.tight_grid().x() << ',' << ki.tight_grid().y() << ','
-       << ki.tight_grid().z() << "};\n    dim3 block{" << ki.tight_block().x()
-       << ',' << ki.tight_block().y() << ',' << ki.tight_block().z() << "};\n"
+       << get_cuda_dim(ki.tight_grid().x()) << ','
+       << get_cuda_dim(ki.tight_grid().y()) << ','
+       << get_cuda_dim(ki.tight_grid().z()) << "};\n    dim3 block{"
+       << get_cuda_dim(ki.tight_block().x()) << ','
+       << get_cuda_dim(ki.tight_block().y()) << ','
+       << get_cuda_dim(ki.tight_block().z()) << "};\n"
        << R"code(    cudaEvent_t start, stop;
     Check(cudaEventCreate(&start));
     Check(cudaEventCreate(&stop));
