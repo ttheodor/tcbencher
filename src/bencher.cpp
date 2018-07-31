@@ -289,35 +289,41 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        uint64_t d = 0;
-        auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                      kernel_function(inputs, outputs))
-                      .count();
-        d += us;
-        info->add_runtimes(us);
-        info->set_device(deviceName);
+        try {
+            uint64_t d = 0;
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                          kernel_function(inputs, outputs))
+                          .count();
+            d += us;
+            info->add_runtimes(us);
+            info->set_device(deviceName);
 
-        if (us < FLAGS_threshold) {
-            for (int i = 1; i < 5; ++i) {
-                auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              kernel_function(inputs, outputs))
-                              .count();
-                d += us;
-                info->add_runtimes(us);
+            if (us < FLAGS_threshold) {
+                for (int i = 1; i < 5; ++i) {
+                    auto us =
+                        std::chrono::duration_cast<std::chrono::microseconds>(
+                            kernel_function(inputs, outputs))
+                            .count();
+                    d += us;
+                    info->add_runtimes(us);
+                }
             }
-        }
-        ++benchmarked;
-        total_us += d;
-        auto us_per_kernel = total_us / benchmarked;
-        auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
-        auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
+            ++benchmarked;
+            total_us += d;
+            auto us_per_kernel = total_us / benchmarked;
+            auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
+            auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
 
-        std::cout << "Benchmarked " << benchmarked << "th kernel with id " << id
-                  << " : " << d / 5.0f
-                  << "us; Estimated Minutes Remaining: " << remaining_minutes
-                  << std::endl;
-        if (benchmarked % 1000 == 0) {
-            writeProto(kernelBuf);
+            std::cout << "Benchmarked " << benchmarked << "th kernel with id "
+                      << id << " : " << d / 5.0f
+                      << "us; Estimated Minutes Remaining: "
+                      << remaining_minutes << std::endl;
+            if (benchmarked % 1000 == 0) {
+                writeProto(kernelBuf);
+            }
+        } catch (const std::runtime_error &e) {
+            std::cout << "Benchmarking kernel with id " << id
+                      << " failed with: " << e.what() << std::endl;
         }
     }
     writeProto(kernelBuf);
