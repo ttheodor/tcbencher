@@ -77,7 +77,11 @@ struct CudaDeleter {
     }
 };
 
-struct CudaOutOfMemory : std::exception {};
+struct CudaOutOfMemory : std::exception {
+    CudaOutOfMemory(size_t requested_bytes)
+        : requested_bytes{requested_bytes} {}
+    size_t requested_bytes;
+};
 
 auto makeTensor(const tc::TensorInfo &ti) {
     float *t;
@@ -85,7 +89,7 @@ auto makeTensor(const tc::TensorInfo &ti) {
         std::accumulate(ti.shape.begin(), ti.shape.end(), 1l,
                         [](const auto &a, const auto &b) { return a * b; });
     if (cudaMalloc(&t, size * sizeof(float)) != cudaSuccess) {
-        throw CudaOutOfMemory{};
+        throw CudaOutOfMemory{size * sizeof(float)};
     }
 
     return std::unique_ptr<float, CudaDeleter>{t, CudaDeleter{}};
@@ -285,9 +289,10 @@ int main(int argc, char *argv[]) {
                 tm.resetUses();
                 break;
             } catch (const CudaOutOfMemory &e) {
-                std::cout
-                    << "Out of cuda memory, will free all memory and retry"
-                    << std::endl;
+                std::cout << "Out of cuda memory, tried to allocate "
+                          << e.requested_bytes
+                          << " bytes. Will free all memory and retry."
+                          << std::endl;
                 tm.clear();
             }
         }
