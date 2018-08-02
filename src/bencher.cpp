@@ -69,7 +69,12 @@ struct TensorInfoHash {
     }
 };
 struct CudaDeleter {
-    void operator()(float *t) { cudaFree(t); }
+    void operator()(float *t) {
+        if (cudaFree(t) != cudaSuccess) {
+            std::cout << "Could not free cuda memory" << std::endl;
+            std::abort();
+        }
+    }
 };
 
 struct CudaOutOfMemory : std::exception {};
@@ -136,8 +141,7 @@ class TensorManager {
         if (ts.empty() or u >= ts.size()) {
             ts.push_back(makeTensor(ti));
         }
-        ++u;
-        return ts.back().get();
+        return ts.at(u++).get();
     }
 
     TensorViewGPU getTensorView(const tc::TensorInfo &ti) {
@@ -269,7 +273,6 @@ int main(int argc, char *argv[]) {
         while (true) {
             try {
                 tm.resetUses();
-
                 inputs.clear();
                 outputs.clear();
 
