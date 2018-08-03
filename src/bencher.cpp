@@ -294,6 +294,13 @@ int main(int argc, char *argv[]) {
                           << " bytes. Will free all memory and retry."
                           << std::endl;
                 tm.clear();
+                while (true) {
+                    auto err = cudaGetLastError();
+                    if (err == cudaSuccess)
+                        break;
+                    std::cout << "Cuda error " << cudaGetErrorString(err)
+                              << std::endl;
+                }
             }
         }
 
