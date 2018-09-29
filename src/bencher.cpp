@@ -22,13 +22,10 @@ namespace fs = std::experimental::filesystem;
 using namespace clara;
 
 std::string input = "kernels.proto";
-uint64_t threshold = 100000;
 uint64_t gpu = 0;
 
 auto cli =
     Opt(input, "input")["--input"]("input filename (default: kernels.proto") |
-    Opt(threshold, "threshold")["--threshold"](
-        "benchmark threshold in us (default: 50000)") |
     Opt(gpu, "gpu")["--gpu"]("which gpu to use (default:0)");
 
 auto readProto() {
@@ -326,15 +323,17 @@ int main(int argc, char *argv[]) {
             info->add_runtimes(us);
             info->set_device(deviceName);
 
-            if (us < threshold) {
-                for (int i = 1; i < 5; ++i) {
-                    auto us =
-                        std::chrono::duration_cast<std::chrono::microseconds>(
-                            kernel_function(inputs, outputs))
-                            .count();
-                    d += us;
-                    info->add_runtimes(us);
-                }
+            auto iterations = 1;
+            if (us < 100000)
+                iterations = 5;
+            if (us < 10000)
+                iterations = 11;
+            for (int i = 1; i < iterations; ++i) {
+                auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              kernel_function(inputs, outputs))
+                              .count();
+                d += us;
+                info->add_runtimes(us);
             }
             ++benchmarked;
             total_us += d;
