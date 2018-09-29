@@ -1,6 +1,5 @@
 add_subdirectory(cuda_sources)
 
-find_package(gflags REQUIRED)
 find_package(Boost REQUIRED)
 
 add_library(tcbencher_lib common.cpp)
@@ -8,7 +7,7 @@ target_link_libraries(tcbencher_lib PUBLIC tc)
 target_include_directories(tcbencher_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE ${Boost_INCLUDE_DIRS})
 
 add_executable(bencher bencher.cpp ${cuda_sources})
-target_link_libraries(bencher PUBLIC kernels tc stdc++fs ${gflags_LIBRARIES})
+target_link_libraries(bencher PUBLIC kernels tc stdc++fs clara)
 target_include_directories(bencher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 set_property(TARGET bencher PROPERTY CXX_STANDARD 17)

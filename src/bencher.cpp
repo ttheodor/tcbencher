@@ -5,7 +5,7 @@
 #include <memory>
 #include <numeric>
 
-#include <gflags/gflags.h>
+#include <clara.hpp>
 
 #include <aot.pb.h>
 #include <benchmark_register.hpp>
@@ -19,21 +19,27 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 
-namespace {
-DEFINE_string(input, "kernels.proto", "input filename (default: kernels.proto");
-DEFINE_uint64(threshold, 100000, "benchmark threshold in us (default: 50000)");
-DEFINE_uint64(gpu, 0, "which gpu to use (default:0)");
-} // namespace
+using namespace clara;
+
+std::string input = "kernels.proto";
+uint64_t threshold = 100000;
+uint64_t gpu = 0;
+
+auto cli =
+    Opt(input, "input")["--input"]("input filename (default: kernels.proto") |
+    Opt(threshold, "threshold")["--threshold"](
+        "benchmark threshold in us (default: 50000)") |
+    Opt(gpu, "gpu")["--gpu"]("which gpu to use (default:0)");
 
 auto readProto() {
-    if (not fs::exists(FLAGS_input))
-        throw std::invalid_argument{FLAGS_input + " does not exists."};
+    if (not fs::exists(input))
+        throw std::invalid_argument{input + " does not exists."};
 
     tc::AotBuf kernels;
     {
-        std::ifstream input{FLAGS_input, std::ios::binary};
-        if (not kernels.ParseFromIstream(&input))
-            throw std::runtime_error{FLAGS_input +
+        std::ifstream input_stream{input, std::ios::binary};
+        if (not kernels.ParseFromIstream(&input_stream))
+            throw std::runtime_error{input +
                                      " does not contain a valid protobuf."};
     }
     if (kernels.kernels_size() == 0)
@@ -42,7 +48,7 @@ auto readProto() {
 }
 
 void writeProto(const tc::AotBuf &kernels) {
-    std::ofstream output{FLAGS_input + "with_runtime",
+    std::ofstream output{input + "with_runtime",
                          std::ios::binary | std::ios::trunc};
     if (not kernels.SerializeToOstream(&output))
         throw std::runtime_error{"Failed to serialize protobuf."};
@@ -238,12 +244,19 @@ auto getDeviceName() {
 }
 
 int main(int argc, char *argv[]) {
-    ::gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    auto result = cli.parse(Args(argc, argv));
+    if (!result) {
+        std::cerr << "Error in command line: " << result.errorMessage()
+                  << std::endl;
+        exit(1);
+    }
+
     static tc::AotBuf kernelBuf;
     kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
-    if (cudaSetDevice(FLAGS_gpu) != cudaSuccess) {
-        std::cout << "Could not set gpu device to " << FLAGS_gpu << std::endl;
+    if (cudaSetDevice(gpu) != cudaSuccess) {
+        std::cout << "Could not set gpu device to " << gpu << std::endl;
         return 1;
     }
     auto deviceName = getDeviceName();
@@ -313,7 +326,7 @@ int main(int argc, char *argv[]) {
             info->add_runtimes(us);
             info->set_device(deviceName);
 
-            if (us < FLAGS_threshold) {
+            if (us < threshold) {
                 for (int i = 1; i < 5; ++i) {
                     auto us =
                         std::chrono::duration_cast<std::chrono::microseconds>(
