@@ -4,6 +4,9 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <clara.hpp>
 
@@ -94,133 +97,9 @@ auto makeTensor(const tc::TensorInfo &ti) {
     if (cudaMalloc(&t, size * sizeof(float)) != cudaSuccess) {
         throw CudaOutOfMemory{size * sizeof(float)};
     }
-
-    return std::unique_ptr<float, CudaDeleter>{t, CudaDeleter{}};
+    return t;
 }
 
-class TensorCPU {
-  public:
-    template <typename... SIZES> TensorCPU(SIZES... idx);
-
-    template <typename... IDX> float &operator()(IDX... idx) {
-        std::vector<size_t> indices{{idx...}};
-        if (indices.size() != info.strides.size()) {
-            throw std::invalid_argument{
-                "Expected " + std::to_string(info.strides.size()) +
-                " indices but got " + std::to_string(indices.size())};
-        }
-        size_t offset = std::inner_product(indices.begin(), indices.end(),
-                                           info.strides.end(), 0ul);
-        if (offset >= size) {
-            throw std::invalid_argument{
-                "Index out of range:  " + std::to_string(offset) +
-                ". Size :" + std::to_string(size)};
-        }
-        return *(memory.get() + offset);
-    }
-
-  private:
-    std::unique_ptr<float> memory;
-    size_t size;
-    tc::TensorInfo info;
-};
-
-class TensorViewGPU {
-  public:
-    TensorViewGPU(float *ptr, const tc::TensorInfo &info);
-    TensorCPU CPU() const;
-    void fromCPU(const TensorCPU &t);
-
-  private:
-    float *memory;
-    tc::TensorInfo info;
-};
-
-class TensorManager {
-  public:
-    TensorManager() = default;
-    TensorManager(const TensorManager &) = delete;
-    TensorManager(TensorManager &&) = delete;
-
-    float *getPointerToTensor(const tc::TensorInfo &ti) {
-        auto &ts = tensors[ti];
-        auto &u = uses[ti];
-        if (ts.empty() or u >= ts.size()) {
-            ts.push_back(makeTensor(ti));
-        }
-        return ts.at(u++).get();
-    }
-
-    TensorViewGPU getTensorView(const tc::TensorInfo &ti) {
-        auto &ts = tensors[ti];
-        auto &u = uses[ti];
-        if (ts.empty() or u >= ts.size()) {
-            ts.push_back(makeTensor(ti));
-        }
-        ++u;
-        return {ts.back().get(), ti};
-    }
-
-    void resetUses() {
-        for (auto &p : uses) {
-            p.second = 0;
-        }
-    }
-
-    void clear() {
-        uses.clear();
-        tensors.clear();
-    }
-
-  private:
-    std::unordered_map<tc::TensorInfo,
-                       std::vector<std::unique_ptr<float, CudaDeleter>>,
-                       TensorInfoHash>
-        tensors;
-    std::unordered_map<tc::TensorInfo, size_t, TensorInfoHash> uses;
-};
-
-// Halide type handling
-typedef int int32;
-typedef long int64;
-typedef float float32;
-typedef double float64;
-
-void group_convolution_4_4_32_56_3_3_32_56(float32 *pO, const float32 *pI,
-                                           const float32 *pW1,
-                                           const float32 *pB) {
-    float32(*O)[32][4][((56 - 3) + 1)][((56 - 3) + 1)] =
-        reinterpret_cast<float32(*)[32][4][((56 - 3) + 1)][((56 - 3) + 1)]>(pO);
-    const float32(*I)[32][4][56][56] =
-        reinterpret_cast<const float32(*)[32][4][56][56]>(pI);
-    const float32(*W1)[4][4][3][3] =
-        reinterpret_cast<const float32(*)[4][4][3][3]>(pW1);
-    const float32(*B)[4] = reinterpret_cast<const float32(*)[4]>(pB);
-    for (int c0 = 0; c0 <= 31; c0 += 1) {
-        for (int c6 = 0; c6 <= 31; c6 += 1) {
-            for (int c7 = 0; c7 <= 3; c7 += 1) {
-                for (int c8 = 0; c8 <= 53; c8 += 1) {
-                    for (int c9 = 0; c9 <= 53; c9 += 1) {
-                        O[c0][c6][c7][c8][c9] = 0.000000f;
-                        for (int c10 = 0; c10 <= 3; c10 += 1) {
-                            for (int c11 = 0; c11 <= 2; c11 += 1) {
-                                for (int c12 = 0; c12 <= 2; c12 += 1) {
-                                    O[c0][c6][c7][c8][c9] =
-                                        (O[c0][c6][c7][c8][c9] +
-                                         (I[c0][c6][c10][(c8 + c11)]
-                                           [(c9 + c12)] *
-                                          W1[c6][c7][c10][c11][c12]));
-                                }
-                            }
-                        }
-                        O[c0][c6][c7][c8][c9] =
-                            (O[c0][c6][c7][c8][c9] + B[c6][c7]);
-                    }
-                }
-            }
-        }
-    }
-}
 #define Check(condition)                                                       \
     do {                                                                       \
         cudaError_t result = condition;                                        \
@@ -240,42 +119,52 @@ auto getDeviceName() {
     return std::string{deviceProp.name};
 }
 
-int main(int argc, char *argv[]) {
+struct IOTensors {
+    std::vector<const float *> inputs;
+    std::vector<float *> outputs;
+};
 
+IOTensors allocateCudaTensors(tc::KernelInfo &ki) {
+    IOTensors tensors;
+    for (auto &it : ki.inputs()) {
+        tensors.inputs.push_back(makeTensor(tc::TensorInfo(it)));
+    }
+    for (auto &ot : ki.outputs()) {
+        tensors.outputs.push_back(makeTensor(tc::TensorInfo(ot)));
+    }
+
+    return tensors;
+}
+
+uint64_t benchKernel(const std::function<Register::KType> &f,
+                     IOTensors &tensors) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               f(tensors.inputs, tensors.outputs))
+        .count();
+}
+
+constexpr int READ = 0;
+constexpr int WRITE = 1;
+
+int main(int argc, char *argv[]) {
     auto result = cli.parse(Args(argc, argv));
     if (!result) {
         std::cerr << "Error in command line: " << result.errorMessage()
                   << std::endl;
         exit(1);
     }
-
-    static tc::AotBuf kernelBuf;
-    kernelBuf = readProto();
+    tc::AotBuf kernelBuf = readProto();
     auto kernels = kernelInfoMap(kernelBuf);
-    if (cudaSetDevice(gpu) != cudaSuccess) {
-        std::cout << "Could not set gpu device to " << gpu << std::endl;
-        return 1;
-    }
-    auto deviceName = getDeviceName();
 
-    auto handler = [](int) {
-        writeProto(kernelBuf);
-        std::abort();
-    };
-    std::signal(SIGINT, handler);
-    std::signal(SIGTERM, handler);
-    std::signal(SIGKILL, handler);
+    uint64_t n_benchmarked = 0ul;
+    uint64_t total_us = 0ul;
 
-    TensorManager tm;
-    std::vector<const float *> inputs;
-    std::vector<float *> outputs;
     auto number_kernels =
         std::count_if(Register::get().begin(), Register::get().end(),
                       [&kernels](const auto &x) {
                           return kernels.at(x.first)->runtimes_size() == 0;
                       });
-    auto benchmarked = 0ul;
-    uint64_t total_us = 0;
+
     for (const auto &p : Register::get()) {
         const auto &id = p.first;
         const auto &kernel_function = p.second;
@@ -283,75 +172,140 @@ int main(int argc, char *argv[]) {
         if (info->runtimes_size() > 0) {
             continue;
         }
+        int pipe_[2];
+        if (pipe(pipe_) != 0) {
+            std::cout << "Could not create pipe" << std::endl;
+            return 1;
+        }
+        auto cpid = fork();
+        if (cpid == -1) {
+            std::cout << "Could not fork" << std::endl;
+            return 1;
+        }
 
-        while (true) {
+        uint64_t current_median = 0;
+
+        if (cpid == 0) {
+            close(pipe_[READ]);
+            auto failed = [&]() {
+                char s = 1;
+                write(pipe_[WRITE], &s, sizeof(s));
+            };
+            auto success = [&]() {
+                char s = 0;
+                write(pipe_[WRITE], &s, sizeof(s));
+            };
+            if (cudaSetDevice(gpu) != cudaSuccess) {
+                std::cout << "Could not set gpu device to " << gpu << std::endl;
+                failed();
+                return 1;
+            }
+
+            std::string deviceName;
             try {
-                tm.resetUses();
-                inputs.clear();
-                outputs.clear();
+                deviceName = getDeviceName();
+            } catch (...) {
+                std::cout << "Could not get gpu device name." << std::endl;
+                failed();
+                return 1;
+            }
 
-                for (const auto &i : info->inputs()) {
-                    inputs.push_back(tm.getPointerToTensor(tc::TensorInfo{i}));
+            std::vector<uint64_t> times;
+            times.reserve(5);
+
+            try {
+                auto tensors = allocateCudaTensors(*info);
+                times.push_back(benchKernel(kernel_function, tensors));
+                auto iterations = 1;
+                if (times.front() < 100000)
+                    iterations = 5;
+                if (times.front() < 10000)
+                    iterations = 11;
+                for (int i = 1; i < iterations; ++i) {
+                    times.push_back(benchKernel(kernel_function, tensors));
                 }
-                for (const auto &o : info->outputs()) {
-                    outputs.push_back(tm.getPointerToTensor(tc::TensorInfo{o}));
-                }
-                tm.resetUses();
-                break;
-            } catch (const CudaOutOfMemory &e) {
-                std::cout << "Out of cuda memory, tried to allocate "
-                          << e.requested_bytes
-                          << " bytes. Will free all memory and retry."
+            } catch (...) {
+                std::cout << "Could not benchmark kernel." << std::endl;
+                failed();
+                return 1;
+            }
+
+            uint64_t s = times.size();
+            success();
+            write(pipe_[WRITE], &s, sizeof(s));
+            write(pipe_[WRITE], times.data(), s * sizeof(uint64_t));
+
+            uint64_t l = deviceName.length();
+            write(pipe_[WRITE], &l, sizeof(l));
+            write(pipe_[WRITE], deviceName.data(), l * sizeof(char));
+            close(pipe_[WRITE]);
+            exit(0);
+        } else {
+            close(pipe_[WRITE]);
+            if (wait(nullptr) == -1) {
+                std::cout << "Error waiting for child" << std::endl;
+                return 1;
+            }
+
+            char status;
+            if (read(pipe_[READ], &status, sizeof(status)) != sizeof(status)) {
+                std::cout << "Error reading from pipe" << std::endl;
+                return 1;
+            }
+            if (status == 1) {
+                std::cout << "Benchmarking kernel with id: " << id << " failed"
                           << std::endl;
-                tm.clear();
-                while (true) {
-                    auto err = cudaGetLastError();
-                    if (err == cudaSuccess)
-                        break;
-                    std::cout << "Cuda error " << cudaGetErrorString(err)
-                              << std::endl;
-                }
+                close(pipe_[READ]);
+                continue;
             }
-        }
 
-        try {
-            uint64_t d = 0;
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                          kernel_function(inputs, outputs))
-                          .count();
-            d += us;
-            info->add_runtimes(us);
+            uint64_t s;
+            if (read(pipe_[READ], &s, sizeof(s)) != sizeof(s)) {
+                std::cout << "Error reading from pipe" << std::endl;
+                return 1;
+            }
+            std::vector<uint64_t> times(s);
+            if (read(pipe_[READ], times.data(), s * sizeof(uint64_t)) !=
+                s * sizeof(uint64_t)) {
+                std::cout << "Error reading from pipe" << std::endl;
+                return 1;
+            }
+
+            uint64_t l;
+            if (read(pipe_[READ], &l, sizeof(l)) != sizeof(l)) {
+                std::cout << "Error reading from pipe" << std::endl;
+                return 1;
+            }
+
+            std::string deviceName(l, '_');
+            if (read(pipe_[READ], deviceName.data(), l * sizeof(char)) !=
+                l * sizeof(char)) {
+                std::cout << "Error reading from pipe" << std::endl;
+                return 1;
+            }
+
+            close(pipe_[READ]);
+            for (auto t : times) {
+                info->add_runtimes(t);
+                total_us += t;
+            }
             info->set_device(deviceName);
+            ++n_benchmarked;
 
-            auto iterations = 1;
-            if (us < 100000)
-                iterations = 5;
-            if (us < 10000)
-                iterations = 11;
-            for (int i = 1; i < iterations; ++i) {
-                auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                              kernel_function(inputs, outputs))
-                              .count();
-                d += us;
-                info->add_runtimes(us);
-            }
-            ++benchmarked;
-            total_us += d;
-            auto us_per_kernel = total_us / benchmarked;
-            auto remaining_us = (number_kernels - benchmarked) * us_per_kernel;
-            auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
-
-            std::cout << "Benchmarked " << benchmarked << "th kernel with id "
-                      << id << " : " << d / 5.0f
-                      << "us; Estimated Minutes Remaining: "
-                      << remaining_minutes << std::endl;
-            if (benchmarked % 1000 == 0) {
-                writeProto(kernelBuf);
-            }
-        } catch (const std::runtime_error &e) {
-            std::cout << "Benchmarking kernel with id " << id
-                      << " failed with: " << e.what() << std::endl;
+            std::nth_element(times.begin(), times.begin() + times.size() / 2,
+                             times.end());
+            current_median = times.at(times.size() / 2);
         }
+
+        auto us_per_kernel = total_us / n_benchmarked;
+        auto remaining_us = (number_kernels - n_benchmarked) * us_per_kernel;
+        auto remaining_minutes = remaining_us / 1000 / 1000 / 60;
+
+        std::cout << "Benchmarked " << n_benchmarked << "th out of "
+                  << number_kernels << " kernels with id " << id << " : "
+                  << current_median
+                  << "us; Estimated Minutes Remaining: " << remaining_minutes
+                  << std::endl;
     }
     writeProto(kernelBuf);
 }
